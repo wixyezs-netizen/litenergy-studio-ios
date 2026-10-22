@@ -168,6 +168,23 @@ enum API {
         return s
     }
 
+    /// Separate session = separate connection pool, used for the one retry after a dropped connection.
+    static let fresh: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.httpShouldUsePipelining = false
+        return URLSession(configuration: c)
+    }()
+
+    static func describe(_ error: Error) -> String {
+        guard let e = error as? URLError else { return "Сервер недоступен. Проверьте адрес и интернет." }
+        switch e.code {
+        case .notConnectedToInternet, .dataNotAllowed: return "Нет подключения к интернету"
+        case .timedOut: return "Сервер долго не отвечает. Попробуйте ещё раз."
+        case .networkConnectionLost: return "Связь с сервером прервалась. Попробуйте ещё раз."
+        default: return "Сервер недоступен. Проверьте адрес и интернет."
+        }
+    }
+
     static func request(_ path: String, method: String = "GET", form: [String: String]? = nil,
                         json: JSON? = nil, server: String, token: String?, timeout: TimeInterval = 20) async throws -> JSON {
         guard let url = URL(string: server + path) else { throw APIError(message: "Неверный адрес сервера") }
@@ -190,8 +207,16 @@ enum API {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: req)
+        } catch let e as URLError where e.code == .networkConnectionLost {
+            // The server closed an idle keep-alive connection just as the request went out.
+            // iOS retries GET by itself but not POST, so retry once on a fresh connection.
+            do {
+                (data, response) = try await Self.fresh.data(for: req)
+            } catch {
+                throw APIError(message: Self.describe(error))
+            }
         } catch {
-            throw APIError(message: "Сервер недоступен. Проверьте адрес и интернет.")
+            throw APIError(message: Self.describe(error))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let obj = (try? JSONSerialization.jsonObject(with: data)) as? JSON ?? [:]

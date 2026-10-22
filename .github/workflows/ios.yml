@@ -29,7 +29,7 @@ jobs:
 
       - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="1.1.0"; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="1.1.1"; fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
 
       - name: Build app (no signing)
