@@ -1,0 +1,40 @@
+name: LEStudio
+options:
+  bundleIdPrefix: com.litenergy
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    ENABLE_BITCODE: "NO"
+    GENERATE_INFOPLIST_FILE: "NO"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEBUG_INFORMATION_FORMAT: dwarf
+targets:
+  LEStudio:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.litenergy.studio
+        PRODUCT_NAME: LEStudio
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - sdk: WebKit.framework
+      - sdk: Photos.framework
+      - sdk: AVKit.framework
+    scheme: {}

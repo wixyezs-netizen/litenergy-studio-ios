@@ -1,0 +1,138 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ipa:
+    name: Unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="1.0.0"; fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: Build app (no signing)
+        run: |
+          set +e
+          xcodebuild -project LEStudio.xcodeproj -scheme LEStudio -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1
+          code=$?
+          grep -E "error:|warning: .*(isolated|Sendable)|\*\* BUILD" build.log | head -80
+          exit $code
+
+      - name: Package IPA
+        run: |
+          APP=build/Build/Products/Release-iphoneos/LEStudio.app
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/
+          cd dist
+          zip -qry "LE-Studio-$VERSION-unsigned.ipa" Payload
+          rm -rf Payload
+          shasum -a 256 *.ipa > SHA256SUMS.txt
+          ls -la
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LE-Studio-ipa
+          path: dist
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "LE Studio iOS $VERSION" \
+            --notes "Неподписанный IPA для iOS 15+ (LitEnergy Automation Studio). Подпишите любым удобным способом (AltStore, Sideloadly, ESign, TrollStore)." || \
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  screens:
+    name: Simulator screenshots
+    runs-on: macos-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project LEStudio.xcodeproj -scheme LEStudio -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build > sim.log 2>&1 || { grep -E "error:" sim.log | head -40; exit 1; }
+
+      - name: Screenshots
+        env:
+          STUDIO_PASSWORD: ${{ secrets.STUDIO_PASSWORD }}
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone') and 'Pro Max' not in x['name'] and 'Plus' not in x['name']]
+          c.sort(key=lambda x: x['name']); print(c[-1]['udid']); print(c[-1]['name'], file=sys.stderr)")
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark || true
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          APP=build/Build/Products/Debug-iphonesimulator/LEStudio.app
+          ID=com.litenergy.studio
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p shots
+          xcrun simctl launch "$UDID" $ID; sleep 8
+          xcrun simctl io "$UDID" screenshot shots/1-login.png
+          xcrun simctl terminate "$UDID" $ID || true
+          if [ -n "$STUDIO_PASSWORD" ]; then
+            xcrun simctl launch "$UDID" $ID -ui_password "$STUDIO_PASSWORD"; sleep 15
+            xcrun simctl io "$UDID" screenshot shots/2-home.png
+            i=3
+            for t in crosspost ai accounts more; do
+              xcrun simctl terminate "$UDID" $ID || true
+              xcrun simctl launch "$UDID" $ID -ui_tab $t; sleep 14
+              xcrun simctl io "$UDID" screenshot shots/$i-$t.png
+              i=$((i+1))
+            done
+          fi
+          ls -la shots
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screens
+          path: |
+            shots
+            sim.log
+          retention-days: 7
