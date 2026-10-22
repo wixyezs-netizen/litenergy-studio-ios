@@ -24,7 +24,11 @@ struct StudioApp: App {
                     let d = UserDefaults.standard
                     if let t = d.string(forKey: "ui_tab"), let tab = DockTab(rawValue: t) { state.tab = tab }
                     if !state.isLoggedIn, let pw = d.string(forKey: "ui_password"), !pw.isEmpty {
-                        Task { @MainActor in try? await state.login(server: state.server, password: pw) }
+                        Task { @MainActor in
+                            do { try await state.login(server: state.server, password: pw) } catch {
+                                state.notice = "Автовход: " + error.localizedDescription
+                            }
+                        }
                     }
                 }
         }

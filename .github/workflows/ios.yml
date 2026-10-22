@@ -114,8 +114,11 @@ jobs:
           xcrun simctl launch "$UDID" $ID; sleep 8
           xcrun simctl io "$UDID" screenshot shots/1-login.png
           xcrun simctl terminate "$UDID" $ID || true
+          curl -s -o /dev/null -m 15 -w "server reachability: %{http_code}\n" http://13.143.165.176:8585/login || echo "server unreachable from runner"
           if [ -n "$STUDIO_PASSWORD" ]; then
-            xcrun simctl launch "$UDID" $ID -ui_password "$STUDIO_PASSWORD"; sleep 15
+            echo "password secret length: ${#STUDIO_PASSWORD}"
+            xcrun simctl launch "$UDID" $ID -ui_password "$STUDIO_PASSWORD"; sleep 4
+            xcrun simctl io "$UDID" screenshot shots/1b-autologin.png; sleep 12
             xcrun simctl io "$UDID" screenshot shots/2-home.png
             i=3
             for t in crosspost ai accounts more; do
