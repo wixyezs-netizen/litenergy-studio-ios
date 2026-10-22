@@ -47,7 +47,7 @@ struct RootView: View {
             } else {
                 LoginView()
             }
-            if let text = state.notice {
+            if state.isLoggedIn, let text = state.notice {
                 VStack {
                     Spacer()
                     Text(text)
