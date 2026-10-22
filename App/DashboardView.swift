@@ -188,6 +188,8 @@ struct DashboardView: View {
         let cast = vg.obj("cast") ?? [:]
         let quota = vg.arr("quota")
         let freeQuota = quota.filter { $0.bool("available") }.count
+        let models = ((vg["models"] as? [String]) ?? []).filter { !$0.isEmpty }
+        let waits = quota.filter { !$0.bool("available") }.map { $0.int("resets_in_min") }.filter { $0 > 0 }
         let running = st.bool("running")
         return Card {
             HStack {
@@ -203,8 +205,15 @@ struct DashboardView: View {
             if running && !st.str("current").isEmpty {
                 Text(st.str("current")).font(.system(size: 13)).foregroundColor(Theme.muted).lineLimit(3)
             }
+            Group {
             row("Сегодня создано", "\(vg.int("today")) из \(cfg.int("daily_count"))")
-            row("Квота GPU", quota.isEmpty ? "—" : "свободно \(freeQuota) из \(quota.count)")
+            row("Модель", models.isEmpty ? "—" : models[0])
+            if models.count > 1 {
+                row("Запасные", models.dropFirst().joined(separator: ", "))
+            }
+            row("Квота GPU", quota.isEmpty ? "—" : quotaText(free: freeQuota, total: quota.count, waits: waits))
+            row("Клипов в запасе", "\(vg.int("unused_clips"))")
+            }
             row("Кастинг", "\(cast.int("characters")) персонажей · \(cast.int("places")) мест · \(cast.int("styles")) стилей")
             row("Режим", (cfg.str("variety_mode") == "mix") ? "смешанный" : "только новые персонажи и места")
             if !st.str("last_error").isEmpty {
@@ -300,6 +309,14 @@ struct DashboardView: View {
     }
 
     // MARK: helpers
+
+    private func quotaText(free: Int, total: Int, waits: [Int]) -> String {
+        var t = "свободно \(free) из \(total)"
+        if let m = waits.min() {
+            t += m >= 60 ? " · сброс через \(m / 60) ч \(m % 60) мин" : " · сброс через \(m) мин"
+        }
+        return t
+    }
 
     private func row(_ k: String, _ v: String) -> some View {
         HStack(alignment: .top) {
